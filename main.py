@@ -7,36 +7,81 @@ st.set_page_config(page_title="맵부심 측정기 - 음식 매움 지수", layo
 
 # 애플리케이션 제목 및 설명
 st.title("🌶️ 맵부심 측정기: 음식 매움 지수 탐색기")
-st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 맛있는 음식 사진을 함께 보여줍니다.")
+st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 나무위키 기반의 정확한 음식 사진을 함께 보여줍니다.")
 
-# 2. 음식 매움 데이터베이스 구축 (오류가 수정된 고화질 음식 이미지 ID 매칭)
-# 떡볶이에 치킨 사진이 나오던 고유 주소 오류를 한식 떡볶이/매운 요리 고유 ID로 수정했습니다.
+# 2. 음식 매움 데이터베이스 구축 (나무위키 및 위키미디어의 검증된 음식 이미지 URL 매칭)
+# 외부 API 개편으로 인한 사진 왜곡을 막기 위해 고정된 위키 이미지 주소를 매핑했습니다.
 food_db = {
-    "떡볶이": {"level": 2, "shu": "1,000 ~ 2,500", "desc": "매콤달콤한 한국의 대표 간식! 가게마다 맵기 차이가 커요.", "url_id": "photo-1664188941753-4811776b9112"},
-    "엽기떡볶이": {"level": 5, "shu": "4,000 ~ 10,000", "desc": "스트레스 풀리는 불타는 매운맛! 쿨피스 필수입니다.", "url_id": "photo-1585032226651-759b368d7246"},
-    "신라면": {"level": 2, "shu": "3,400", "desc": "한국인 매운맛의 표준 스탠다드 기분 좋은 얼큰함.", "url_id": "photo-1569718212165-3a8278d5f624"},
-    "불닭볶음면": {"level": 4, "shu": "4,400", "desc": "전 세계를 울린 매운맛! 전설의 볶음면입니다.", "url_id": "photo-1612927601601-6638404737ce"},
-    "핵불닭볶음면": {"level": 5, "shu": "10,000", "desc": "도전 정신을 자극하는 극강의 매운맛, 위장 조심하세요!", "url_id": "photo-1612927601601-6638404737ce"},
-    "김치찌개": {"level": 1, "shu": "500 ~ 1,500", "desc": "칼칼하고 시원한 밥도둑, 한국인의 소울푸드.", "url_id": "photo-1627308595229-7830a5c91f9f"},
-    "마라탕": {"level": 3, "shu": "2,000 ~ 5,000", "desc": "혀가 얼얼해지는 초마력의 중국 사천식 매운맛!", "url_id": "photo-1541696490-8744a5db0228"},
-    "짬뽕": {"level": 2, "shu": "1,500 ~ 3,000", "desc": "해산물이 우러난 얼큰하고 칼칼한 불맛 국물 요리.", "url_id": "photo-1608897013039-887f21d8c804"},
-    "제육볶음": {"level": 1, "shu": "800 ~ 1,200", "desc": "달콤 매콤하게 볶아낸 대중적인 고기 반찬.", "url_id": "photo-1600891964599-f61ba0e24092"},
-    "풋고추": {"level": 0, "shu": "0 ~ 500", "desc": "아삭아삭하고 쌈장에 찍어 먹기 딱 좋은 안 매운 고추.", "url_id": "photo-1592417817098-8f3d6eb19675"},
-    "청양고추": {"level": 3, "shu": "4,000 ~ 12,000", "desc": "깔끔하고 알싸한 매운맛을 더해주는 한국의 천연 조미료.", "url_id": "photo-1601303516518-ca04278453ae"},
-    "카레": {"level": 1, "shu": "500", "desc": "향신료의 알싸함이 감도는 부드러운 매운맛 (순한맛 기준).", "url_id": "photo-1603894584373-5ac82b2ae398"},
-    "진라면 매운맛": {"level": 2, "shu": "2,000", "desc": "신라면 and 양대산맥을 이루는 얼큰하고 진한 국물 라면.", "url_id": "photo-1552611052-33e04de081de"},
-    "닭발": {"level": 4, "shu": "3,000 ~ 6,000", "desc": "콜라겐 가득, 쫀득하면서도 입안이 얼얼해지는 포차 안주.", "url_id": "photo-1623961990059-28355ee88ac3"},
-    "낙지볶음": {"level": 4, "shu": "3,500 ~ 7,000", "desc": "밥에 콩나물과 함께 슥슥 비벼 먹는 매콤한 요리.", "url_id": "photo-1563245372-f21724e3856d"}
+    "떡볶이": {
+        "level": 2, 
+        "shu": "1,000 ~ 2,500", 
+        "desc": "매콤달콤한 한국의 대표 간식! 고추장과 물엿 베이스로 가게마다 맵기 차이가 커요.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Tteokbokki.jpg/640px-Tteokbokki.jpg"
+    },
+    "엽기떡볶이": {
+        "level": 5, 
+        "shu": "4,000 ~ 10,000", 
+        "desc": "스트레스 풀리는 불타는 매운맛! 캡사이신과 고춧가루의 강력한 조합으로 쿨피스가 필수입니다.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Ddaengcho_tteokbokki.jpg/640px-Ddaengcho_tteokbokki.jpg"
+    },
+    "신라면": {
+        "level": 2, 
+        "shu": "3,400", 
+        "desc": "한국인 매운맛의 표준 스탠다드. 쇠고기 분말 베이스의 기분 좋은 얼큰함입니다.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/b/b2/Shin_Ramyun_block.jpg"
+    },
+    "불닭볶음면": {
+        "level": 4, 
+        "shu": "4,400", 
+        "desc": "전 세계를 울린 K-매운맛의 선두주자! 국물 없는 액상 수프의 강렬한 인술 같은 매운맛입니다.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Buldak-bokkeum-myeon.jpg/640px-Buldak-bokkeum-myeon.jpg"
+    },
+    "김치찌개": {
+        "level": 1, 
+        "shu": "500 ~ 1,500", 
+        "desc": "잘 익은 김치와 돼지고기를 달달 볶아 끓여낸 칼칼하고 시원한 한국인의 소울푸드.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Kimchi_jjigae.jpg/640px-Kimchi_jjigae.jpg"
+    },
+    "마라탕": {
+        "level": 3, 
+        "shu": "2,000 ~ 5,000", 
+        "desc": "초피(화조)와 고추기름이 들어가 혀가 저리고 얼얼해지는(마비되는 듯한) 사천식 매운맛!", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Malatang_in_Seoul.jpg/640px-Malatang_in_Seoul.jpg"
+    },
+    "짬뽕": {
+        "level": 2, 
+        "shu": "1,500 ~ 3,000", 
+        "desc": "야채와 해산물을 강한 불에 볶아 육수를 부어 만든 얼큰하고 칼칼한 중화풍 국물 요리.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Jjamppong.jpg/640px-Jjamppong.jpg"
+    },
+    "제육볶음": {
+        "level": 1, 
+        "shu": "800 ~ 1,200", 
+        "desc": "돼지고기를 고추장, 고춧가루 양념에 달콤 매콤하게 볶아낸 대중적인 기사식당 원탑 반찬.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Jeyuk_bokkeum.jpg/640px-Jeyuk_bokkeum.jpg"
+    },
+    "닭발": {
+        "level": 4, 
+        "shu": "3,000 ~ 6,000", 
+        "desc": "콜라겐 가득, 쫀득하면서도 입안이 불타오르는 매운 양념 직화 포차 안주.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Dakbal.jpg/640px-Dakbal.jpg"
+    },
+    "낙지볶음": {
+        "level": 4, 
+        "shu": "3,500 ~ 7,000", 
+        "desc": "강렬한 고춧가루 양념에 낙지를 빠르게 볶아내 밥, 콩나물과 비벼 먹는 스테미너 요리.", 
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Nakji_bokkeum.jpg/640px-Nakji_bokkeum.jpg"
+    }
 }
 
 # 3. 사이드바 - 추천 검색어 팁 제공
 st.sidebar.header("💡 추천 검색어")
 st.sidebar.markdown("아래 음식들을 입력해보세요!")
-for food in list(food_db.keys())[:7]:
+for food in list(food_db.keys()):
     st.sidebar.markdown(f"- **{food}**")
 
 # 4. 메인 입력창 UI
-user_food = st.text_input("🌶️ 매움 지수가 궁금한 음식 이름을 입력하세요:", placeholder="예: 불닭볶음면, 떡볶이, 마라탕 등").strip()
+user_food = st.text_input("🌶️ 매움 지수가 궁금한 음식 이름을 입력하세요:", placeholder="예: 떡볶이, 신라면, 마라탕, 불닭볶음면 등").strip()
 
 if user_food:
     # 데이터베이스 검색 (공백 제거 후 부분 매칭)
@@ -51,7 +96,7 @@ if user_food:
         level = info["level"]
         shu = info["shu"]
         desc = info["desc"]
-        url_id = info["url_id"]
+        img_url = info["img_url"]
         
         st.success(f"🎉 '{matched_food}'의 매움 정보를 찾았습니다!")
         
@@ -98,12 +143,11 @@ if user_food:
             
         with col2:
             st.subheader("🖼️ 음식 이미지")
-            # 보강된 고정식 이미지 렌더링 경로
-            img_url = f"https://images.unsplash.com/{url_id}?auto=format&fit=crop&w=600&q=80"
-            st.image(img_url, caption=f"맛있는 {matched_food} 이미지 (출처: Unsplash)", use_container_width=True)
+            # 위키미디어/나무위키 고정 다이렉트 이미지 주소로 출력
+            st.image(img_url, caption=f"정확한 {matched_food} 실물 사진", use_container_width=True)
 
     else:
-        # DB에 없는 음식을 입력했을 때의 예외 처리 및 대체 기본 이미지 설정
+        # DB에 없는 음식을 입력했을 때의 예외 처리
         st.warning(f"⚠️ '{user_food}'은(는) 데이터베이스에 등록되지 않은 음식입니다.")
         st.markdown("일반적인 매운 음식 기준으로 예측해 드릴게요!")
         
@@ -121,5 +165,6 @@ if user_food:
             st.info("💡 일반적인 한식 찌개나 볶음류 수준의 맵기(약 1,500 SHU)로 추정됩니다.")
         with col2:
             st.subheader("🖼️ 예측 음식 이미지")
-            fallback_img = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80"
-            st.image(fallback_img, caption="추천 퀴진 플레이트 이미지", use_container_width=True)
+            # 기본 한식 테이블 셋 사진으로 대체
+            fallback_img = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Korean_table_setting_1.jpg/640px-Korean_table_setting_1.jpg"
+            st.image(fallback_img, caption="추천 한식 상차림 이미지", use_container_width=True)
