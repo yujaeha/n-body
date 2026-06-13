@@ -1,157 +1,126 @@
 import streamlit as st
-import googleapiclient.discovery
-import googleapiclient.errors
-import re
-from wordcloud import WordCloud
+import numpy as np
 import matplotlib.pyplot as plt
-from collections import Counter
-import pandas as pd
-import os
+import time
 
-# 한글 폰트 설정 (스트림릿 클라우드 나눔폰트 경로 설정)
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" # 기본 폴백
-if os.path.exists("/usr/share/fonts/nanum/NanumGothic.ttf"):
-    FONT_PATH = "/usr/share/fonts/nanum/NanumGothic.ttf"
+# 스트림릿 페이지 설정
+st.set_page_config(page_title="N-Body 중력 시뮬레이션", layout="wide")
 
-# 1. 유튜브 영상 ID 추출 함수
-def get_video_id(url):
-    video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
-    return video_id_match.group(1) if video_id_match else None
+st.title("🌌 N-Body 우주 중력 시뮬레이션")
+st.markdown("뉴턴의 만유인력 법칙을 기반으로 여러 천체들이 서로의 중력에 의해 끌려가며 만드는 궤도를 실시간으로 시뮬레이션합니다.")
 
-# 2. 유튜브 댓글 및 작성자 수집 함수 (수정됨)
-def get_youtube_comments(video_id, api_key, max_results=100):
-    youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
-    comment_data = [] # (작성자, 댓글내용) 튜플을 담을 리스트
+# --- 사이드바 설정 (컨트롤러) ---
+st.sidebar.header("🚀 시뮬레이션 설정")
+
+# 중력 상수 (G)
+G = st.sidebar.slider("중력 상수 (G)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+
+# 천체의 개수 (N)
+N = st.sidebar.slider("천체의 개수 (N)", min_value=2, max_value=20, value=5, step=1)
+
+# 시간 변화량 (dt)
+dt = st.sidebar.slider("시간 걸음 (dt)", min_value=0.01, max_value=0.10, value=0.05, step=0.01)
+
+# 소프트닝 인자 (거리가 0이 될 때 힘이 무한대가 되는 것을 방지)
+softening = 0.1
+
+# 루프 횟수
+steps = st.sidebar.slider("프레임 수", min_value=50, max_value=500, value=200, step=50)
+
+# 시뮬레이션 상태 관리를 위한 세션 상태 초기화
+if 'positions' not in st.session_state or st.sidebar.button("🌌 우주 초기화 및 재생성"):
+    # 무작위 위치 (X, Y) 생성 (-5에서 5 사이)
+    st.session_state.positions = np.random.uniform(-5, 5, (N, 2))
+    # 무작위 속도 (Vx, Vy) 생성 (-0.5에서 0.5 사이)
+    st.session_state.velocities = np.random.uniform(-0.5, 0.5, (N, 2))
+    # 무작위 질량 생성 (10에서 100 사이)
+    st.session_state.masses = np.random.uniform(10, 100, (N, 1))
+    # 궤도 추적을 위한 기록 리스트
+    st.session_state.history = [st.session_state.positions.copy()]
+
+# --- 메인 가속도 계산 함수 (N-Body 핵심 로직) ---
+def compute_accelerations(pos, masses, G, softening):
+    N = pos.shape[0]
+    a = np.zeros((N, 2))
     
-    try:
-        request = youtube.commentThreads().list(
-            part="snippet",
-            videoId=video_id,
-            maxResults=min(max_results, 100),
-            textFormat="plainText"
-        )
+    for i in range(N):
+        # 다른 모든 천체들과의 거리 벡터 계산
+        dx = pos[:, 0] - pos[i, 0]
+        dy = pos[:, 1] - pos[i, 1]
         
-        while request and len(comment_data) < max_results:
-            response = request.execute()
-            for item in response.get("items", []):
-                snippet = item["snippet"]["topLevelComment"]["snippet"]
-                author = snippet.get("authorDisplayName", "알 수 없는 사용자")
-                comment_text = snippet.get("textDisplay", "")
-                
-                comment_data.append((author, comment_text))
+        # 거리의 제곱 계산 (소프트닝 추가하여 분모가 0이 되는 현상 방지)
+        r2 = dx**2 + dy**2 + softening**2
+        r3 = np.sqrt(r2)**3
+        
+        # 가속도 계산: a = G * m * r_vector / r^3
+        a[i, 0] = G * np.sum(masses.flatten() * dx / r3)
+        a[i, 1] = G * np.sum(masses.flatten() * dy / r3)
+        
+    return a
+
+# --- 시뮬레이션 실행 버튼 및 애니메이션 화면 ---
+if st.button("▶️ 시뮬레이션 시작"):
+    # 실시간 업데이트를 위한 비어있는 스트림릿 컨테이너 생성
+    plot_spot = st.empty()
+    
+    # 설정된 스텝만큼 루프 돌며 물리 연산 수행
+    for step in range(steps):
+        pos = st.session_state.positions
+        vel = st.session_state.velocities
+        masses = st.session_state.masses
+        
+        # 1. 가속도 계산
+        acc = compute_accelerations(pos, masses, G, softening)
+        
+        # 2. 속도 업데이트 (v = v + a*dt)
+        vel += acc * dt
+        
+        # 3. 위치 업데이트 (x = x + v*dt)
+        pos += vel * dt
+        
+        # 데이터 세션 저장 및 히스토리 기록
+        st.session_state.positions = pos
+        st.session_state.velocities = vel
+        st.session_state.history.append(pos.copy())
+        
+        # 4. Matplotlib를 이용한 실시간 그래프 그리기
+        fig, ax = plt.subplots(figsize=(7, 7))
+        ax.set_facecolor('#0E1117') # 다크 모드 배경색 설정
+        fig.patch.set_facecolor('#0E1117')
+        
+        # 최근 20프레임의 궤도(꼬리) 그리기
+        history_arr = np.array(st.session_state.history[-20:])
+        for i in range(N):
+            ax.plot(history_arr[:, i, 0], history_arr[:, i, 1], color='cyan', alpha=0.3, linewidth=1)
             
-            if "nextPageToken" in response and len(comment_data) < max_results:
-                request = youtube.commentThreads().list_next(request, response)
-            else:
-                break
-                
-        return comment_data
-    except googleapiclient.errors.HttpError as e:
-        st.error(f"유튜브 API 오류가 발생했습니다: {e}")
-        return []
-
-# 3. 텍스트 전처리 및 단어 빈도 계산
-def clean_text_and_get_words(comment_data):
-    # 댓글 내용만 합치기
-    full_text = " ".join([item[1] for item in comment_data])
-    
-    # 한글, 영문, 숫자만 남기고 제거
-    cleaned_text = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', full_text)
-    words = cleaned_text.split()
-    
-    # 분석에서 제외할 의미 없는 단어(불용어) 설정
-    stopwords = {'그냥', '진짜', '너무', '보고', '영상이', '영상', '완전', '시청', '구독', '좋아요', '정말', '항상', '대박'}
-    words = [word for word in words if len(word) > 1 and word not in stopwords]
-    
-    return words
-
-# --- 스트림릿 UI 시작 ---
-st.set_page_config(page_title="유튜브 댓글 심층 분석기", layout="wide")
-
-st.title("📊 유튜브 댓글 작성자 파악 및 키워드 분석기")
-st.markdown("유튜브 링크를 통해 댓글 작성자와 내용을 수집하고, 가장 많이 사용된 핵심 단어와 워드 클라우드를 생성합니다.")
-
-# 사이드바 설정
-st.sidebar.header("⚙️ 설정")
-api_key = st.sidebar.text_input("YouTube API Key를 입력하세요", type="password")
-max_comments = st.sidebar.slider("수집할 댓글 수", min_value=20, max_value=500, value=100, step=20)
-
-# 메인 입력창
-video_url = st.text_input("유튜브 영상 링크(URL)를 입력하세요", placeholder="https://www.youtube.com/watch?v=...")
-
-if st.button("🚀 댓글 및 작성자 분석 시작"):
-    if not api_key:
-        st.warning("사이드바에 YouTube API Key를 입력해주세요.")
-    elif not video_url:
-        st.warning("유튜브 영상 링크를 입력해주세요.")
-    else:
-        video_id = get_video_id(video_url)
+        # 현재 천체들의 위치 찍기 (질량 크기에 비례하여 점 크기 조절)
+        sizes = masses.flatten() * 2
+        sc = ax.scatter(pos[:, 0], pos[:, 1], s=sizes, c=sizes, cmap='autumn', edgecolors='white', alpha=0.9)
         
-        if not video_id:
-            st.error("올바른 유튜브 링크 형식이 아닙니다. 확인 후 다시 시도해주세요.")
-        else:
-            with st.spinner("유튜브에서 데이터를 가져와 열심히 분석 중입니다..."):
-                # 댓글 데이터 수집 (작성자, 내용)
-                comment_data = get_youtube_comments(video_id, api_key, max_comments)
-                
-                if comment_data:
-                    st.success(f"총 {len(comment_data)}개의 댓글을 성공적으로 수집했습니다!")
-                    
-                    # 단어 가공 및 빈도 측정
-                    words = clean_text_and_get_words(comment_data)
-                    word_counts = Counter(words)
-                    
-                    # 🔥 [추가 기능] 가장 많이 사용된 단어 요약 바 시각화
-                    if word_counts:
-                        st.subheader("💡 핵심 요약: 가장 많이 사용된 단어 Top 5")
-                        top_5 = word_counts.most_common(5)
-                        
-                        # 가로로 깔끔하게 배치
-                        cols = st.columns(5)
-                        for rank, (word, count) in enumerate(top_5, 1):
-                            with cols[rank-1]:
-                                st.metric(label=f"{rank}위 단어", value=word, delta=f"{count}회 사용")
-                        st.markdown("---")
-                    
-                    # 레이아웃 분할 (좌측: 워드클라우드, 우측: 빈도수 차트)
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.subheader("☁️ 한글 워드 클라우드")
-                        if words:
-                            try:
-                                wordcloud = WordCloud(
-                                    font_path=FONT_PATH,
-                                    background_color="white",
-                                    width=800,
-                                    height=600,
-                                    max_words=100
-                                ).generate_from_frequencies(word_counts)
-                                
-                                fig, ax = plt.subplots(figsize=(10, 8))
-                                ax.imshow(wordcloud, interpolation="bilinear")
-                                ax.axis("off")
-                                st.pyplot(fig)
-                            except Exception as e:
-                                st.error("워드클라우드 생성 중 폰트 오류가 발생했습니다.")
-                        else:
-                            st.info("분석할 만한 유의미한 단어가 없습니다.")
-                            
-                    with col2:
-                        st.subheader("📈 주요 키워드 전체 순위 (Top 15)")
-                        if word_counts:
-                            most_common = word_counts.most_common(15)
-                            df_counts = pd.DataFrame(most_common, columns=['단어', '빈도수'])
-                            st.bar_chart(df_counts.set_index('단어'))
-                            st.dataframe(df_counts, use_container_width=True)
-                        else:
-                            st.info("데이터가 부족합니다.")
-                    
-                    # 🔥 [추가 기능] 댓글 원본 보기 리스트에 작성자 이름 매핑
-                    with st.expander("💬 수집된 원본 댓글 및 작성자 보기"):
-                        for i, (author, content) in enumerate(comment_data, 1):
-                            st.markdown(f"**{i}. 유저명: `{author}`**")
-                            st.write(content)
-                            st.markdown("---")
-                else:
-                    st.info("수집된 댓글이 없거나 댓글 기능이 비활성화되어 있습니다.")
+        # 축 범위 고정 및 UI 정리
+        ax.set_xlim(-15, 15)
+        ax.set_ylim(-15, 15)
+        ax.axis('off')
+        
+        # 스트림릿 화면 고침
+        plot_spot.pyplot(fig)
+        plt.close(fig) # 메모리 해제
+        
+        # 애니메이션 속도 조절용 프레임 지연
+        time.sleep(0.02)
+        
+    st.success("시뮬레이션이 완료되었습니다! 왼쪽 사이드바에서 다시 초기화하거나 설정을 바꿀 수 있습니다.")
+else:
+    # 최초 진입 시 정지 상태 화면 표시
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.set_facecolor('#0E1117')
+    fig.patch.set_facecolor('#0E1117')
+    
+    pos = st.session_state.positions
+    sizes = st.session_state.masses.flatten() * 2
+    ax.scatter(pos[:, 0], pos[:, 1], s=sizes, c=sizes, cmap='autumn', edgecolors='white')
+    
+    ax.set_xlim(-15, 15)
+    ax.set_ylim(-15, 15)
+    ax.axis('off')
+    st.pyplot(fig)
