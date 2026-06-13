@@ -2,94 +2,73 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-# 1. 스트림릿 페이지 설정 (와이드 레이아웃)
+# 1. 스트림릿 페이지 설정
 st.set_page_config(page_title="맵부심 측정기 - 음식 매움 지수", layout="wide", page_icon="🌶️")
 
-# 애플리케이션 제목 및 설명
 st.title("🌶️ 맵부심 측정기: 음식 매움 지수 탐색기")
-st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 직관적인 그래픽 리포트를 함께 보여줍니다.")
+st.markdown("궁금한 음식의 이름을 입력해보세요! 외부 서버 차단 없이 100% 안전하게 동작하는 시각 리포트와 매움 단계를 보여줍니다.")
 
-# 2. 음식 매움 데이터베이스 (보안 차단 및 엑스박스 오류가 없는 안전한 오픈 이미지 링크 및 대체 이모지 가드 적용)
+# 2. 내장형 그래픽 카드 데이터 (외부 주소 완전 배제, 인터넷 차단 영향 0%)
+# 이미지 서버가 차단되어도 브라우저가 직접 그려내는 대형 그래픽 컴포넌트 구조입니다.
 food_db = {
     "떡볶이": {
-        "level": 2, 
-        "shu": "1,000 ~ 2,500", 
-        "desc": "매콤달콤한 한국의 대표 간식! 고추장과 물엿 베이스로 가게마다 맵기 차이가 커요.", 
-        "emoji": "🍡🌶️",
-        "img_url": "https://images.unsplash.com/photo-1664188941753-4811776b9112?auto=format&fit=crop&w=600&q=80"
+        "level": 2, "shu": "1,000 ~ 2,500", 
+        "desc": "매콤달콤한 한국의 대표 간식! 고추장과 물엿 베이스로 가게마다 맵기 차이가 커요.",
+        "bg_color": "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)", "emoji": "🍡", "status": "맛있게 매움"
     },
     "엽기떡볶이": {
-        "level": 5, 
-        "shu": "4,000 ~ 10,000", 
-        "desc": "스트레스 풀리는 불타는 매운맛! 캡사이신과 고춧가루의 강력한 조합으로 쿨피스가 필수입니다.", 
-        "emoji": "🔥🍲",
-        "img_url": "https://images.unsplash.com/photo-1585032226651-759b368d7246?auto=format&fit=crop&w=600&q=80"
+        "level": 5, "shu": "4,000 ~ 10,000", 
+        "desc": "스트레스 풀리는 불타는 매운맛! 캡사이신과 고춧가루의 강력한 조합으로 쿨피스가 필수입니다.",
+        "bg_color": "linear-gradient(135deg, #830000 0%, #BA0000 100%)", "emoji": "🔥", "status": "지옥의 극강 매운맛"
     },
     "신라면": {
-        "level": 2, 
-        "shu": "3,400", 
-        "desc": "한국인 매운맛의 표준 스탠다드. 쇠고기 분말 베이스의 기분 좋은 얼큰함입니다.", 
-        "emoji": "🍜✨",
-        "img_url": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80"
+        "level": 2, "shu": "3,400", 
+        "desc": "한국인 매운맛의 표준 스탠다드. 쇠고기 분말 베이스의 기분 좋은 얼큰함입니다.",
+        "bg_color": "linear-gradient(135deg, #FF4B2B 0%, #FF8533 100%)", "emoji": "🍜", "status": "얼큰한 표준 매운맛"
     },
     "불닭볶음면": {
-        "level": 4, 
-        "shu": "4,400", 
-        "desc": "전 세계를 울린 K-매운맛의 선두주자! 국물 없는 액상 수프의 강렬한 매운맛입니다.", 
-        "emoji": "🐔🔥",
-        "img_url": "https://images.unsplash.com/photo-1612927601601-6638404737ce?auto=format&fit=crop&w=600&q=80"
+        "level": 4, "shu": "4,400", 
+        "desc": "전 세계를 울린 K-매운맛의 선두주자! 국물 없는 액상 수프의 강렬한 매운맛입니다.",
+        "bg_color": "linear-gradient(135deg, #D31027 0%, #EA384D 100%)", "emoji": "🐔", "status": "위장 경보 발령"
     },
     "핵불닭볶음면": {
-        "level": 5, 
-        "shu": "10,000", 
-        "desc": "도전 정신을 자극하는 극강의 매운맛, 위장 조심하세요!", 
-        "emoji": "💀🔥",
-        "img_url": "https://images.unsplash.com/photo-1612927601601-6638404737ce?auto=format&fit=crop&w=600&q=80"
+        "level": 5, "shu": "10,000", 
+        "desc": "도전 정신을 자극하는 극강의 매운맛, 위장 조심하세요!",
+        "bg_color": "linear-gradient(135deg, #4A00E0 0%, #8E2DE2 100%)", "emoji": "💀", "status": "위험! 도전 금지 수준"
     },
     "김치찌개": {
-        "level": 1, 
-        "shu": "500 ~ 1,500", 
-        "desc": "잘 익은 김치와 돼지고기를 달달 볶아 끓여낸 칼칼하고 시원한 한국인의 소울푸드.", 
-        "emoji": "🍲🐷",
-        "img_url": "https://images.unsplash.com/photo-1627308595229-7830a5c91f9f?auto=format&fit=crop&w=600&q=80"
+        "level": 1, "shu": "500 ~ 1,500", 
+        "desc": "잘 익은 김치와 돼지고기를 달달 볶아 끓여낸 칼칼하고 시원한 한국인의 소울푸드.",
+        "bg_color": "linear-gradient(135deg, #f12711 0%, #f5af19 100%)", "emoji": "🍲", "status": "부담 없는 맵기"
     },
     "마라탕": {
-        "level": 3, 
-        "shu": "2,000 ~ 5,000", 
-        "desc": "초피(화조)와 고추기름이 들어가 혀가 저리고 얼얼해지는 사천식 매운맛!", 
-        "emoji": "🪵⚡",
-        "img_url": "https://images.unsplash.com/photo-1541696490-8744a5db0228?auto=format&fit=crop&w=600&q=80"
+        "level": 3, "shu": "2,000 ~ 5,000", 
+        "desc": "초피(화조)와 고추기름이 들어가 혀가 저리고 얼얼해지는 사천식 매운맛!",
+        "bg_color": "linear-gradient(135deg, #7A0016 0%, #DD1818 100%)", "emoji": "⚡", "status": "혀가 마비되는 얼얼함"
     },
     "짬뽕": {
-        "level": 2, 
-        "shu": "1,500 ~ 3,000", 
-        "desc": "야채와 해산물을 강한 불에 볶아 육수를 부어 만든 얼큰하고 칼칼한 국물 요리.", 
-        "emoji": "🦑🍜",
-        "img_url": "https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&w=600&q=80"
+        "level": 2, "shu": "1,500 ~ 3,000", 
+        "desc": "야채와 해산물을 강한 불에 볶아 육수를 부어 만든 얼큰하고 칼칼한 국물 요리.",
+        "bg_color": "linear-gradient(135deg, #FE8C00 0%, #F83600 100%)", "emoji": "🦑", "status": "시원 칼칼한 맛"
     },
     "제육볶음": {
-        "level": 1, 
-        "shu": "800 ~ 1,200", 
-        "desc": "돼지고기를 고추장 양념에 달콤 매콤하게 볶아낸 대중적인 반찬 요리.", 
-        "emoji": "🐷🔥",
-        "img_url": "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=600&q=80"
+        "level": 1, "shu": "800 ~ 1,200", 
+        "desc": "돼지고기를 고추장 양념에 달콤 매콤하게 볶아낸 대중적인 반찬 요리.",
+        "bg_color": "linear-gradient(135deg, #FF512F 0%, #DD2476 100%)", "emoji": "🐷", "status": "매콤달콤 밥도둑"
     },
     "닭발": {
-        "level": 4, 
-        "shu": "3,000 ~ 6,000", 
-        "desc": "콜라겐 가득, 쫀득하면서도 입안이 불타오르는 매운 양념 직화 포차 안주.", 
-        "emoji": "🐾🌶️",
-        "img_url": "https://images.unsplash.com/photo-1623961990059-28355ee88ac3?auto=format&fit=crop&w=600&q=80"
+        "level": 4, "shu": "3,000 ~ 6,000", 
+        "desc": "콜라겐 가득, 쫀득하면서도 입안이 불타오르는 매운 양념 직화 포차 안주.",
+        "bg_color": "linear-gradient(135deg, #ED213A 0%, #93291E 100%)", "emoji": "🐾", "status": "입안이 화끈한 안주"
     }
 }
 
-# 3. 사이드바 - 추천 검색어 팁 제공
+# 3. 사이드바 - 추천 검색어
 st.sidebar.header("💡 추천 검색어")
-st.sidebar.markdown("아래 음식들을 입력해보세요!")
 for food in list(food_db.keys()):
     st.sidebar.markdown(f"- **{food}**")
 
-# 4. 메인 입력창 UI
+# 4. 메인 UI
 user_food = st.text_input("🌶️ 매움 지수가 궁금한 음식 이름을 입력하세요:", placeholder="예: 떡볶이, 신라면, 마라탕, 불닭볶음면 등").strip()
 
 if user_food:
@@ -104,8 +83,9 @@ if user_food:
         level = info["level"]
         shu = info["shu"]
         desc = info["desc"]
+        bg_color = info["bg_color"]
         emoji = info["emoji"]
-        img_url = info["img_url"]
+        status = info["status"]
         
         st.success(f"🎉 '{matched_food}'의 매움 정보를 찾았습니다!")
         
@@ -150,29 +130,34 @@ if user_food:
             st.info(f"ℹ️ **스코빌 지수 (SHU):** {shu} SHU\n\n📝 **음식 설명:** {desc}")
             
         with col2:
-            st.subheader("🖼️ 시각 정보 요약")
+            st.subheader("🖼️ 음식 시각 리포트 카탈로그")
             
-            # [핵심 변경] 외부 서버 트래픽 원천 차단 시 작동할 HTML 카드형 대형 이모지 패널 제작
+            # 외부 링크가 전혀 없는 고해상도 내장형 디자인 컴포넌트 렌더링 (엑스박스 절대 불가능)
             card_html = f"""
-            <div style="background: linear-gradient(135deg, #ff4b4b 0%, #ff8585 100%); 
-                        padding: 30px; 
-                        border-radius: 15px; 
+            <div style="background: {bg_color}; 
+                        padding: 50px 20px; 
+                        border-radius: 20px; 
                         text-align: center; 
-                        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
+                        box-shadow: 0px 10px 25px rgba(0,0,0,0.3);
                         color: white;
-                        margin-bottom: 15px;">
-                <span style="font-size: 70px;">{emoji}</span>
-                <h2 style="color: white; margin-top: 10px; font-weight: bold;">{matched_food}</h2>
-                <p style="font-size: 16px; opacity: 0.9;">위키 및 고해상도 백업 가동 중</p>
+                        font-family: 'Malgun Gothic', sans-serif;
+                        margin-top: 15px;">
+                <div style="font-size: 100px; margin-bottom: 20px; filter: drop-shadow(0px 5px 5px rgba(0,0,0,0.2));">{emoji}</div>
+                <h1 style="color: white; margin: 0px 0px 10px 0px; font-weight: 800; font-size: 36px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">{matched_food}</h1>
+                <div style="background-color: rgba(255,255,255,0.2); 
+                            display: inline-block; 
+                            padding: 8px 20px; 
+                            border-radius: 50px; 
+                            font-size: 18px; 
+                            font-weight: bold;
+                            letter-spacing: 1px;
+                            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                    🔥 {status} (Level {level})
+                </div>
+                <p style="margin-top: 25px; font-size: 14px; opacity: 0.8; font-weight: 300;">* 스트림릿 안전 가드 모드가 작동 중입니다.</p>
             </div>
             """
             st.markdown(card_html, unsafe_allow_html=True)
-            
-            # 가드용 글로벌 고속 분산형 이미지 링크 출력 (안전하게 렌더링을 보장)
-            try:
-                st.image(img_url, caption=f"맛있는 {matched_food} 실물 스냅샷", use_container_width=True)
-            except:
-                st.caption("⚠️ 실시간 고해상도 이미지는 스트림릿 클라우드 네트워크 사정상 상단 이모지 카드로 대체 표기됩니다.")
 
     else:
         st.warning(f"⚠️ '{user_food}'은(는) 데이터베이스에 등록되지 않은 음식입니다.")
@@ -193,10 +178,10 @@ if user_food:
         with col2:
             st.subheader("🖼️ 예측 기본 요리 정보")
             st.markdown("""
-            <div style="background-color: #262730; padding: 40px; border-radius: 10px; text-align: center; border: 1px solid #464855;">
-                <span style="font-size: 60px;">🍲🍱</span>
-                <p style="color: gray; margin-top: 15px;">대표적인 한식 구성 플레이트 스탠다드</p>
+            <div style="background: linear-gradient(135deg, #434343 0%, #000000 100%); padding: 60px 20px; border-radius: 20px; text-align: center; color: white;">
+                <div style="font-size: 80px;">🍲</div>
+                <p style="color: #cccccc; margin-top: 15px; font-size: 18px;">미등록 표준 한식 푸드 세팅</p>
             </div>
             """, unsafe_allow_html=True)
 else:
-    st.info("💡 위의 입력창에 음식 이름을 입력하시면 매움 지수 스케일러가 즉시 작동합니다.")
+    st.info("💡 위의 입력창에 음식 이름을 입력하시면 실시간 매움 지수 스케일러가 즉시 작동합니다.")
