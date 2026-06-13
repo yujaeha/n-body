@@ -4,150 +4,211 @@ import plotly.graph_objects as go
 import time
 
 # 스트림릿 페이지 설정
-st.set_page_config(page_title="3D N-Body 중력 시뮬레이션", layout="wide")
+st.set_page_config(page_title="3D 블랙홀 중력렌즈 시뮬레이션", layout="wide")
 
-st.title("🌌 3D N-Body 우주 중력 시뮬레이션")
-st.markdown("뉴턴의 만유인력 법칙을 3차원 공간(X, Y, Z)으로 확장하여, 마우스로 회전하고 확대하며 관찰할 수 있는 입체 궤도 시뮬레이션입니다.")
+st.title("🕳️ 3D 블랙홀 및 중력 렌즈 효과 시뮬레이션")
+st.markdown("정중앙에 위치한 거대 블랙홀의 중력에 의해 주변 천체들과 빛의 궤도가 휘어지다가 '사건의 지평선' 속으로 빨려 들어가는 현상을 시뮬레이션합니다.")
 
 # --- 사이드바 설정 (컨트롤러) ---
-st.sidebar.header("🚀 시뮬레이션 설정")
+st.sidebar.header("⚙️ 블랙홀 및 우주 설정")
 
-G = st.sidebar.slider("중력 상수 (G)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
-N = st.sidebar.slider("천체의 개수 (N)", min_value=2, max_value=15, value=5, step=1) # 3D 연산 속도를 고려해 최대치 소폭 조정
-dt = st.sidebar.slider("시간 걸음 (dt)", min_value=0.01, max_value=0.10, value=0.05, step=0.01)
-steps = st.sidebar.slider("프레임 수", min_value=50, max_value=300, value=150, step=50)
+# 블랙홀 질량 (사건의 지평선 크기에 직결)
+M = st.sidebar.slider("블랙홀 질량 (M)", min_value=10.0, max_value=200.0, value=50.0, step=10.0)
 
-softening = 0.1 # 중력 폭주 방지 인자
+# 주변 천체/광자 개수
+N = st.sidebar.slider("주변 천체 개수 (N)", min_value=3, max_value=20, value=8, step=1)
 
-# 시뮬레이션 상태 관리를 위한 세션 상태 초기화 (3차원 배열 형태로 변경)
-if 'positions_3d' not in st.session_state or st.sidebar.button("🌌 3D 우주 초기화 및 재생성"):
-    # 무작위 3차원 위치 (X, Y, Z) 생성 (-5에서 5 사이)
-    st.session_state.positions_3d = np.random.uniform(-5, 5, (N, 3))
-    # 무작위 3차원 속도 (Vx, Vy, Vz) 생성 (-0.5에서 0.5 사이)
-    st.session_state.velocities_3d = np.random.uniform(-0.5, 0.5, (N, 3))
-    # 무작위 질량 생성
-    st.session_state.masses_3d = np.random.uniform(10, 100, (N, 1))
-    # 궤도 추적을 위한 기록 리스트
-    st.session_state.history_3d = [st.session_state.positions_3d.copy()]
+# 시간 변화량 (dt)
+dt = st.sidebar.slider("시간 걸음 (dt)", min_value=0.01, max_value=0.08, value=0.04, step=0.01)
 
-# --- 3차원 가속도 계산 함수 ---
-def compute_accelerations_3d(pos, masses, G, softening):
-    N = pos.shape[0]
-    a = np.zeros((N, 3)) # X, Y, Z 3가지 축
+# 프레임 수
+steps = st.sidebar.slider("시뮬레이션 프레임 수", min_value=50, max_value=300, value=150, step=50)
+
+# 슈바르츠실트 반경 (사건의 지평선 크기 계산용 근사치)
+# 이 반경 안으로 들어오면 블랙홀에 흡수된 것으로 처리합니다.
+rs = 0.04 * M 
+
+# --- 시뮬레이션 상태 관리를 위한 세션 상태 초기화 ---
+if 'bh_pos' not in st.session_state or st.sidebar.button("🌌 우주 재구성 (초기화)"):
+    # 블랙홀은 항상 (0, 0, 0) 고정
+    st.session_state.bh_pos = np.array([0.0, 0.0, 0.0])
     
+    # 천체들의 초기 3D 위치 (블랙홀 주변 원형 혹은 무작위 배치)
+    # X, Z 축 위주로 넓게 배치하고 Y축으로 약간의 입체감 부여
+    positions = np.random.uniform(-12, 12, (N, 3))
+    # 지나치게 블랙홀과 가깝게 스폰되는 것 방지
     for i in range(N):
-        # 다른 모든 천체들과의 3차원 거리 벡터 계산
-        dx = pos[:, 0] - pos[i, 0]
-        dy = pos[:, 1] - pos[i, 1]
-        dz = pos[:, 2] - pos[i, 2]
+        while np.linalg.norm(positions[i]) < rs + 2.0:
+            positions[i] = np.random.uniform(-12, 12, 3)
+            
+    st.session_state.bh_positions = positions
+    
+    # 천체들의 초기 속도 (블랙홀 주위를 공전하거나 스쳐 지나가도록 설정)
+    # 원 운동에 가까운 속도 벡터를 부여하기 위해 위치 벡터와 직교하는 성분 유도
+    velocities = np.zeros((N, 3))
+    for i in range(N):
+        p = positions[i]
+        # 외적을 이용해 직교하는 공전 속도 방향 생성
+        v_dir = np.array([-p[2], 0.1, p[0]]) 
+        v_dir = v_dir / np.linalg.norm(v_dir)
+        # 공전 속도 크기 지정
+        v_speed = np.sqrt(M / (np.linalg.norm(p) + 0.1)) * 0.4
+        velocities[i] = v_dir * v_speed
         
-        # 3차원 공간에서의 거리 제곱 계산
-        r2 = dx**2 + dy**2 + dz**2 + softening**2
-        r3 = np.sqrt(r2)**3
-        
-        # 각 축의 가속도 계산
-        a[i, 0] = G * np.sum(masses.flatten() * dx / r3)
-        a[i, 1] = G * np.sum(masses.flatten() * dy / r3)
-        a[i, 2] = G * np.sum(masses.flatten() * dz / r3)
-        
-    return a
+    st.session_state.bh_velocities = velocities
+    # 천체들의 생존 여부 (블랙홀에 흡수되면 False)
+    st.session_state.alive = np.ones(N, dtype=bool)
+    # 각 천체들의 궤도 기록 배열
+    st.session_state.bh_histories = [[positions[i].copy()] for i in range(N)]
 
-# --- 시뮬레이션 실행 버튼 및 애니메이션 화면 ---
-if st.button("▶️ 3D 시뮬레이션 시작"):
+# --- 시뮬레이션 시작 버튼 및 루프 ---
+if st.button("▶️ 블랙홀 시뮬레이션 가동"):
     plot_spot = st.empty()
     
     for step in range(steps):
-        pos = st.session_state.positions_3d
-        vel = st.session_state.velocities_3d
-        masses = st.session_state.masses_3d
+        pos = st.session_state.bh_positions
+        vel = st.session_state.bh_velocities
+        alive = st.session_state.alive
+        histories = st.session_state.bh_histories
         
-        # 1. 3D 가속도 계산
-        acc = compute_accelerations_3d(pos, masses, G, softening)
+        # 물리 연산 및 위치 업데이트
+        for i in range(N):
+            if not alive[i]:
+                continue
+                
+            r_vector = -pos[i] # 블랙홀(0,0,0)을 향하는 벡터
+            r_distance = np.linalg.norm(r_vector)
+            
+            # 사건의 지평선(슈바르츠실트 반경) 내부로 진입 시 흡수 처리
+            if r_distance <= rs:
+                alive[i] = False
+                continue
+                
+            # 뉴턴 중력에 일반상대론적 효과(가까울수록 급격히 강해지는 중력)를 모사한 보정 인자 추가
+            # 가속도 a = M / r^2 * (방향 벡터) -> 단위벡터화 적용 시 M * r_vector / r^3
+            # 상대론적 효과 보정: 거리가 가까울수록 중력이 기하급수적으로 증가
+            relativity_factor = 1.0 + (3.0 * (rs**2) / (r_distance**2 + 0.1))
+            acc = (M * relativity_factor / (r_distance**3 + 0.1)) * r_vector
+            
+            # 속도 및 위치 변경
+            vel[i] += acc * dt
+            pos[i] += vel[i] * dt
+            
+            # 궤도 기록 추가
+            histories[i].append(pos[i].copy())
+            
+        # 세션 상태 갱신
+        st.session_state.bh_positions = pos
+        st.session_state.bh_velocities = vel
+        st.session_state.alive = alive
+        st.session_state.bh_histories = histories
         
-        # 2. 속도 및 위치 업데이트
-        vel += acc * dt
-        pos += vel * dt
-        
-        st.session_state.positions_3d = pos
-        st.session_state.velocities_3d = vel
-        st.session_state.history_3d.append(pos.copy())
-        
-        # 3. Plotly를 이용한 대화형 3D 그래프 생성
+        # --- Plotly 3D 시각화 구현 ---
         fig = go.Figure()
         
-        # 최근 25프레임의 3D 궤도(꼬리) 그리기
-        history_arr = np.array(st.session_state.history_3d[-25:])
+        # 1. 중심 거대 블랙홀(사건의 지평선) 그리기
+        # 구체 형태를 표현하기 위해 메쉬 그리드 생성
+        u = np.linspace(0, 2 * np.pi, 20)
+        v = np.linspace(0, np.pi, 20)
+        x_bh = rs * np.outer(np.cos(u), np.sin(v))
+        y_bh = rs * np.outer(np.sin(u), np.sin(v))
+        z_bh = rs * np.outer(np.ones(np.size(u)), np.cos(v))
+        
+        fig.add_trace(go.Surface(
+            x=x_bh, y=y_bh, z=z_bh,
+            colorscale=[[0, 'rgb(5,5,5)'], [1, 'rgb(15,15,15)']],
+            showscale=False,
+            opacity=1.0,
+            name="사건의 지평선"
+        ))
+        
+        # 빛이 휘는 아인슈타인 링 효과를 시각화하기 위한 가상의 흡수 원반(Accretion Disk) 경계선 추가
+        disk_r = np.linspace(rs, rs * 2.5, 10)
+        disk_theta = np.linspace(0, 2*np.pi, 30)
+        dr, dt_mesh = np.meshgrid(disk_r, disk_theta)
+        x_disk = dr * np.cos(dt_mesh)
+        y_disk = np.zeros_like(x_disk)
+        z_disk = dr * np.sin(dt_mesh)
+        
+        fig.add_trace(go.Surface(
+            x=x_disk, y=y_disk, z=z_disk,
+            colorscale='YlOrRd',
+            showscale=False,
+            opacity=0.3,
+            name="강착 원반"
+        ))
+        
+        # 2. 천체들의 이동 궤도(꼬리) 그리기
         for i in range(N):
+            if len(histories[i]) > 1:
+                h_arr = np.array(histories[i])
+                fig.add_trace(go.Scatter3d(
+                    x=h_arr[:, 0], y=h_arr[:, 1], z=h_arr[:, 2],
+                    mode='lines',
+                    line=dict(
+                        color='rgba(255, 165, 0, 0.6)' if alive[i] else 'rgba(255, 0, 0, 0.2)', 
+                        width=2.5
+                    ),
+                    showlegend=False
+                ))
+                
+        # 3. 현재 살아있는 천체들의 위치 표시
+        alive_indices = np.where(alive == True)[0]
+        if len(alive_indices) > 0:
             fig.add_trace(go.Scatter3d(
-                x=history_arr[:, i, 0],
-                y=history_arr[:, i, 1],
-                z=history_arr[:, i, 2],
-                mode='lines',
-                line=dict(color='cyan', width=2),
-                opacity=0.4,
+                x=pos[alive_indices, 0],
+                y=pos[alive_indices, 1],
+                z=pos[alive_indices, 2],
+                mode='markers',
+                marker=dict(size=5, color='cyan', opacity=0.9, line=dict(color='white', width=0.5)),
                 showlegend=False
             ))
             
-        # 현재 천체들의 3D 위치 찍기
-        sizes = masses.flatten() * 0.3 # Plotly 크기 규격에 맞게 조정
-        fig.add_trace(go.Scatter3d(
-            x=pos[:, 0],
-            y=pos[:, 1],
-            z=pos[:, 2],
-            mode='markers',
-            marker=dict(
-                size=sizes,
-                color=sizes,
-                colorscale='Inferno',
-                line=dict(color='white', width=1),
-                opacity=0.9
-            ),
-            showlegend=False
-        ))
-        
-        # 3D 우주 배경 및 레이아웃 설정
+        # 레이아웃 구성 및 다크 테마 적용
         fig.update_layout(
             template="plotly_dark",
             margin=dict(l=0, r=0, b=0, t=0),
             scene=dict(
-                xaxis=dict(range=[-15, 15], backgroundcolor="rgb(14, 17, 23)", showgrid=False, showticklabels=False, title=''),
-                yaxis=dict(range=[-15, 15], backgroundcolor="rgb(14, 17, 23)", showgrid=False, showticklabels=False, title=''),
-                zaxis=dict(range=[-15, 15], backgroundcolor="rgb(14, 17, 23)", showgrid=False, showticklabels=False, title=''),
+                xaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
+                yaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
+                zaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
                 aspectmode='cube'
             ),
             width=800,
             height=700
         )
         
-        # 스트림릿 화면 고침 (Plotly 전용 함수 사용)
-        plot_spot.plotly_chart(fig, use_container_width=True, key=f"plotly_step_{step}")
-        
-        # 애니메이션 속도 제어
+        plot_spot.plotly_chart(fig, use_container_width=True, key=f"blackhole_{step}")
         time.sleep(0.01)
         
-    st.success("3D 시뮬레이션 완료! 마우스로 화면을 드래그하여 다른 각도에서 궤도를 확인해보세요.")
+    # 실시간 생존 수 계산 후 결과 보고
+    survivors = np.sum(st.session_state.alive)
+    st.success(f"시뮬레이션 종료! 총 {N}개의 천체 중 {N - survivors}개가 블랙홀에 흡수되었고, {survivors}개가 중력권을 탈출하거나 공전 중입니다.")
+
 else:
-    # 정지 상태 기본 화면
+    # 정지 상태 초기 화면
     fig = go.Figure()
-    pos = st.session_state.positions_3d
-    sizes = st.session_state.masses_3d.flatten() * 0.3
     
-    fig.add_trace(go.Scatter3d(
-        x=pos[:, 0], y=pos[:, 1], z=pos[:, 2],
-        mode='markers',
-        marker=dict(size=sizes, color=sizes, colorscale='Inferno', line=dict(color='white', width=1))
-    ))
+    # 초기 블랙홀 모형
+    u = np.linspace(0, 2 * np.pi, 15)
+    v = np.linspace(0, np.pi, 15)
+    x_bh = rs * np.outer(np.cos(u), np.sin(v))
+    y_bh = rs * np.outer(np.sin(u), np.sin(v))
+    z_bh = rs * np.outer(np.ones(np.size(u)), np.cos(v))
+    fig.add_trace(go.Surface(x=x_bh, y=y_bh, z=z_bh, colorscale=[[0, 'black'], [1, 'black']], showscale=False))
+    
+    # 초기 천체 위치
+    pos = st.session_state.bh_positions
+    fig.add_trace(go.Scatter3d(x=pos[:, 0], y=pos[:, 1], z=pos[:, 2], mode='markers', marker=dict(size=5, color='cyan')))
     
     fig.update_layout(
-        template="plotly_dark",
-        margin=dict(l=0, r=0, b=0, t=0),
+        template="plotly_dark", margin=dict(l=0, r=0, b=0, t=0),
         scene=dict(
-            xaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
-            yaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
-            zaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
+            xaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
+            yaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
+            zaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
             aspectmode='cube'
         ),
-        width=800,
-        height=700
+        width=800, height=700
     )
-    st.plotly_chart(fig, use_container_width=True, key="plotly_initial")
+    st.plotly_chart(fig, use_container_width=True, key="bh_initial")
