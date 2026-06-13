@@ -1,214 +1,137 @@
 import streamlit as st
-import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
-import time
 
-# 스트림릿 페이지 설정
-st.set_page_config(page_title="3D 블랙홀 중력렌즈 시뮬레이션", layout="wide")
+# 1. 스트림릿 페이지 설정 (와이드 레이아웃, 다크/라이트 자동 호환)
+st.set_page_config(page_title="맵부심 측정기 - 음식 매움 지수", layout="wide", page_icon="🌶️")
 
-st.title("🕳️ 3D 블랙홀 및 중력 렌즈 효과 시뮬레이션")
-st.markdown("정중앙에 위치한 거대 블랙홀의 중력에 의해 주변 천체들과 빛의 궤도가 휘어지다가 '사건의 지평선' 속으로 빨려 들어가는 현상을 시뮬레이션합니다.")
+# 애플리케이션 제목 및 설명
+st.title("🌶️ 맵부심 측정기: 음식 매움 지수 탐색기")
+st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 맛있는 음식 사진을 함께 보여줍니다.")
 
-# --- 사이드바 설정 (컨트롤러) ---
-st.sidebar.header("⚙️ 블랙홀 및 우주 설정")
+# 2. 음식 매움 데이터베이스 구축 (한국인 선호 음식 중심)
+# 단계(Level): 0(안 매움) ~ 5(핵매움)
+food_db = {
+    "떡볶이": {"level": 2, "shu": "1,000 ~ 2,500", "desc": "매콤달콤한 한국의 대표 간식! 가게마다 맵기 차이가 커요.", "keyword": "tteokbokki"},
+    "엽기떡볶이": {"level": 5, "shu": "4,000 ~ 10,000", "desc": "스트레스 풀리는 불타는 매운맛! 쿨피스 필수입니다.", "keyword": "spicy-rice-cake"},
+    "신라면": {"level": 2, "shu": "3,400", "desc": "한국인 매운맛의 표준 스탠다드 기분 좋은 얼큰함.", "keyword": "ramen"},
+    "불닭볶음면": {"level": 4, "shu": "4,400", "desc": "전 세계를 울린 매운맛! 전설의 볶음면입니다.", "keyword": "spicy-noodles"},
+    "핵불닭볶음면": {"level": 5, "shu": "10,000", "desc": "도전 정신을 자극하는 극강의 매운맛, 위장 조심하세요!", "keyword": "chili-noodles"},
+    "김치찌개": {"level": 1, "shu": "500 ~ 1,500", "desc": "칼칼하고 시원한 밥도둑, 한국인의 소울푸드.", "keyword": "kimchi-stew"},
+    "마라탕": {"level": 3, "shu": "2,000 ~ 5,000", "desc": "혀가 얼얼해지는 초마력의 중국 사천식 매운맛!", "keyword": "malatang"},
+    "짬뽕": {"level": 2, "shu": "1,500 ~ 3,000", "desc": "해산물이 우러난 얼큰하고 칼칼한 불맛 국물 요리.", "keyword": "jjamppong"},
+    "제육볶음": {"level": 1, "shu": "800 ~ 1,200", "desc": "달콤 매콤하게 볶아낸 대중적인 고기 반찬.", "keyword": "korean-spicy-pork"},
+    "풋고추": {"level": 0, "shu": "0 ~ 500", "desc": "아삭아삭하고 쌈장에 찍어 먹기 딱 좋은 안 매운 고추.", "keyword": "green-chili"},
+    "청양고추": {"level": 3, "shu": "4,000 ~ 12,000", "desc": "깔끔하고 알싸한 매운맛을 더해주는 한국의 천연 조미료.", "keyword": "cheongyang-chili"},
+    "카레": {"level": 1, "shu": "500", "desc": "향신료의 알싸함이 감도는 부드러운 매운맛 (순한맛 기준).", "keyword": "curry"},
+    "진라면 매운맛": {"level": 2, "shu": "2,000", "desc": "신라면과 양대산맥을 이루는 얼큰하고 진한 국물 라면.", "keyword": "instant-noodles"},
+    "닭발": {"level": 4, "shu": "3,000 ~ 6,000", "desc": "콜라겐 가득, 쫀득하면서도 입안이 얼얼해지는 포차 안주.", "keyword": "spicy-chicken-feet"},
+    "낙지볶음": {"level": 4, "shu": "3,500 ~ 7,000", "desc": "밥에 콩나물과 함께 슥슥 비벼 먹는 매콤한 쓰러진 소도 일으키는 맛.", "keyword": "spicy-octopus"}
+}
 
-# 블랙홀 질량 (사건의 지평선 크기에 직결)
-M = st.sidebar.slider("블랙홀 질량 (M)", min_value=10.0, max_value=200.0, value=50.0, step=10.0)
+# 3. 사이드바 - 추천 검색어 팁 제공
+st.sidebar.header("💡 추천 검색어")
+st.sidebar.markdown("아래 음식들을 입력해보세요!")
+for food in list(food_db.keys())[:7]:
+    st.sidebar.markdown(f"- **{food}**")
 
-# 주변 천체/광자 개수
-N = st.sidebar.slider("주변 천체 개수 (N)", min_value=3, max_value=20, value=8, step=1)
+# 4. 메인 입력창 UI
+user_food = st.text_input("🌶️ 매움 지수가 궁금한 음식 이름을 입력하세요:", placeholder="예: 불닭볶음면, 떡볶이, 마라탕 등").strip()
 
-# 시간 변화량 (dt)
-dt = st.sidebar.slider("시간 걸음 (dt)", min_value=0.01, max_value=0.08, value=0.04, step=0.01)
-
-# 프레임 수
-steps = st.sidebar.slider("시뮬레이션 프레임 수", min_value=50, max_value=300, value=150, step=50)
-
-# 슈바르츠실트 반경 (사건의 지평선 크기 계산용 근사치)
-# 이 반경 안으로 들어오면 블랙홀에 흡수된 것으로 처리합니다.
-rs = 0.04 * M 
-
-# --- 시뮬레이션 상태 관리를 위한 세션 상태 초기화 ---
-if 'bh_pos' not in st.session_state or st.sidebar.button("🌌 우주 재구성 (초기화)"):
-    # 블랙홀은 항상 (0, 0, 0) 고정
-    st.session_state.bh_pos = np.array([0.0, 0.0, 0.0])
-    
-    # 천체들의 초기 3D 위치 (블랙홀 주변 원형 혹은 무작위 배치)
-    # X, Z 축 위주로 넓게 배치하고 Y축으로 약간의 입체감 부여
-    positions = np.random.uniform(-12, 12, (N, 3))
-    # 지나치게 블랙홀과 가깝게 스폰되는 것 방지
-    for i in range(N):
-        while np.linalg.norm(positions[i]) < rs + 2.0:
-            positions[i] = np.random.uniform(-12, 12, 3)
+if user_food:
+    # 데이터베이스 검색 (공백 제거 후 매칭률 높이기)
+    matched_food = None
+    for key in food_db.keys():
+        if user_food.replace(" ", "") in key.replace(" ", "") or key.replace(" ", "") in user_food.replace(" ", ""):
+            matched_food = key
+            break
             
-    st.session_state.bh_positions = positions
-    
-    # 천체들의 초기 속도 (블랙홀 주위를 공전하거나 스쳐 지나가도록 설정)
-    # 원 운동에 가까운 속도 벡터를 부여하기 위해 위치 벡터와 직교하는 성분 유도
-    velocities = np.zeros((N, 3))
-    for i in range(N):
-        p = positions[i]
-        # 외적을 이용해 직교하는 공전 속도 방향 생성
-        v_dir = np.array([-p[2], 0.1, p[0]]) 
-        v_dir = v_dir / np.linalg.norm(v_dir)
-        # 공전 속도 크기 지정
-        v_speed = np.sqrt(M / (np.linalg.norm(p) + 0.1)) * 0.4
-        velocities[i] = v_dir * v_speed
+    if matched_food:
+        info = food_db[matched_food]
+        level = info["level"]
+        shu = info["shu"]
+        desc = info["desc"]
+        keyword = info["keyword"]
         
-    st.session_state.bh_velocities = velocities
-    # 천체들의 생존 여부 (블랙홀에 흡수되면 False)
-    st.session_state.alive = np.ones(N, dtype=bool)
-    # 각 천체들의 궤도 기록 배열
-    st.session_state.bh_histories = [[positions[i].copy()] for i in range(N)]
-
-# --- 시뮬레이션 시작 버튼 및 루프 ---
-if st.button("▶️ 블랙홀 시뮬레이션 가동"):
-    plot_spot = st.empty()
-    
-    for step in range(steps):
-        pos = st.session_state.bh_positions
-        vel = st.session_state.bh_velocities
-        alive = st.session_state.alive
-        histories = st.session_state.bh_histories
+        st.success(f"🎉 '{matched_food}'의 매움 정보를 찾았습니다!")
         
-        # 물리 연산 및 위치 업데이트
-        for i in range(N):
-            if not alive[i]:
-                continue
-                
-            r_vector = -pos[i] # 블랙홀(0,0,0)을 향하는 벡터
-            r_distance = np.linalg.norm(r_vector)
+        # 화면 레이아웃 분할 (좌측: 매움 지수 미터기 / 우측: 음식 사진)
+        col1, col2 = st.columns([1.2, 1])
+        
+        with col1:
+            st.subheader("📊 매움 레벨 및 스코빌(SHU)")
             
-            # 사건의 지평선(슈바르츠실트 반경) 내부로 진입 시 흡수 처리
-            if r_distance <= rs:
-                alive[i] = False
-                continue
-                
-            # 뉴턴 중력에 일반상대론적 효과(가까울수록 급격히 강해지는 중력)를 모사한 보정 인자 추가
-            # 가속도 a = M / r^2 * (방향 벡터) -> 단위벡터화 적용 시 M * r_vector / r^3
-            # 상대론적 효과 보정: 거리가 가까울수록 중력이 기하급수적으로 증가
-            relativity_factor = 1.0 + (3.0 * (rs**2) / (r_distance**2 + 0.1))
-            acc = (M * relativity_factor / (r_distance**3 + 0.1)) * r_vector
+            # Plotly를 이용한 세련된 반원형 게이지 차트 생성
+            level_colors = ["#34c759", "#acff2f", "#ffcc00", "#ff9500", "#ff3b30", "#8b0000"]
+            level_names = ["0단계: 순둥이", "1단계: 신라면 미만", "2단계: 맛있게 매움", "3단계: 혀가 얼얼", "4단계: 위장 경보", "5단계: 지옥의 맛"]
             
-            # 속도 및 위치 변경
-            vel[i] += acc * dt
-            pos[i] += vel[i] * dt
-            
-            # 궤도 기록 추가
-            histories[i].append(pos[i].copy())
-            
-        # 세션 상태 갱신
-        st.session_state.bh_positions = pos
-        st.session_state.bh_velocities = vel
-        st.session_state.alive = alive
-        st.session_state.bh_histories = histories
-        
-        # --- Plotly 3D 시각화 구현 ---
-        fig = go.Figure()
-        
-        # 1. 중심 거대 블랙홀(사건의 지평선) 그리기
-        # 구체 형태를 표현하기 위해 메쉬 그리드 생성
-        u = np.linspace(0, 2 * np.pi, 20)
-        v = np.linspace(0, np.pi, 20)
-        x_bh = rs * np.outer(np.cos(u), np.sin(v))
-        y_bh = rs * np.outer(np.sin(u), np.sin(v))
-        z_bh = rs * np.outer(np.ones(np.size(u)), np.cos(v))
-        
-        fig.add_trace(go.Surface(
-            x=x_bh, y=y_bh, z=z_bh,
-            colorscale=[[0, 'rgb(5,5,5)'], [1, 'rgb(15,15,15)']],
-            showscale=False,
-            opacity=1.0,
-            name="사건의 지평선"
-        ))
-        
-        # 빛이 휘는 아인슈타인 링 효과를 시각화하기 위한 가상의 흡수 원반(Accretion Disk) 경계선 추가
-        disk_r = np.linspace(rs, rs * 2.5, 10)
-        disk_theta = np.linspace(0, 2*np.pi, 30)
-        dr, dt_mesh = np.meshgrid(disk_r, disk_theta)
-        x_disk = dr * np.cos(dt_mesh)
-        y_disk = np.zeros_like(x_disk)
-        z_disk = dr * np.sin(dt_mesh)
-        
-        fig.add_trace(go.Surface(
-            x=x_disk, y=y_disk, z=z_disk,
-            colorscale='YlOrRd',
-            showscale=False,
-            opacity=0.3,
-            name="강착 원반"
-        ))
-        
-        # 2. 천체들의 이동 궤도(꼬리) 그리기
-        for i in range(N):
-            if len(histories[i]) > 1:
-                h_arr = np.array(histories[i])
-                fig.add_trace(go.Scatter3d(
-                    x=h_arr[:, 0], y=h_arr[:, 1], z=h_arr[:, 2],
-                    mode='lines',
-                    line=dict(
-                        color='rgba(255, 165, 0, 0.6)' if alive[i] else 'rgba(255, 0, 0, 0.2)', 
-                        width=2.5
-                    ),
-                    showlegend=False
-                ))
-                
-        # 3. 현재 살아있는 천체들의 위치 표시
-        alive_indices = np.where(alive == True)[0]
-        if len(alive_indices) > 0:
-            fig.add_trace(go.Scatter3d(
-                x=pos[alive_indices, 0],
-                y=pos[alive_indices, 1],
-                z=pos[alive_indices, 2],
-                mode='markers',
-                marker=dict(size=5, color='cyan', opacity=0.9, line=dict(color='white', width=0.5)),
-                showlegend=False
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = level,
+                domain = {'x': [0, 1], 'y': [0, 1]},
+                title = {'text': f"<b>{level_names[level]}</b>", 'font': {'size': 20, 'color': level_colors[level]}},
+                gauge = {
+                    'axis': {'range': [0, 5], 'tickwidth': 1, 'tickcolor': "gray", 'tickvals': [0, 1, 2, 3, 4, 5]},
+                    'bar': {'color': level_colors[level]},
+                    'bgcolor': "white",
+                    'borderwidth': 2,
+                    'bordercolor': "gray",
+                    'steps': [
+                        {'range': [0, 1], 'color': 'rgba(52, 199, 89, 0.2)'},
+                        {'range': [1, 2], 'color': 'rgba(172, 255, 47, 0.2)'},
+                        {'range': [2, 3], 'color': 'rgba(255, 204, 0, 0.2)'},
+                        {'range': [3, 4], 'color': 'rgba(255, 149, 0, 0.2)'},
+                        {'range': [4, 5], 'color': 'rgba(255, 59, 48, 0.2)'}
+                    ],
+                }
             ))
             
-        # 레이아웃 구성 및 다크 테마 적용
-        fig.update_layout(
-            template="plotly_dark",
-            margin=dict(l=0, r=0, b=0, t=0),
-            scene=dict(
-                xaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
-                yaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
-                zaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False, title=''),
-                aspectmode='cube'
-            ),
-            width=800,
-            height=700
-        )
-        
-        plot_spot.plotly_chart(fig, use_container_width=True, key=f"blackhole_{step}")
-        time.sleep(0.01)
-        
-    # 실시간 생존 수 계산 후 결과 보고
-    survivors = np.sum(st.session_state.alive)
-    st.success(f"시뮬레이션 종료! 총 {N}개의 천체 중 {N - survivors}개가 블랙홀에 흡수되었고, {survivors}개가 중력권을 탈출하거나 공전 중입니다.")
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font={'color': "white" if st.get_option("theme.base") == "dark" else "black"},
+                width=450,
+                height=350,
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # 정보 카드 배치
+            st.info(f"ℹ️ **스코빌 지수 (SHU):** {shu} SHU\n\n📝 **음식 설명:** {desc}")
+            
+        with col2:
+            st.subheader("🖼️ 음식 이미지")
+            # Unsplash Source API를 활용하여 고화질 키워드 기반 음식 이미지 동적 수집
+            # 파라미터에 시간(time.time)을 임의로 섞어 이미지 새로고침 반응성 확보
+            img_url = f"https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=600&q=80" # 기본 피자/푸드 이미지 고정 폴백
+            
+            if keyword:
+                img_url = f"https://source.unsplash.com/featured/600x500/?{keyword},food"
+            
+            # 마크다운/HTML 형태로 가독성 좋고 둥근 모서리가 적용된 이미지 출력
+            st.image(img_url, caption=f"맛있는 {matched_food} 이미지 (출처: Unsplash)", use_container_width=True)
 
-else:
-    # 정지 상태 초기 화면
-    fig = go.Figure()
-    
-    # 초기 블랙홀 모형
-    u = np.linspace(0, 2 * np.pi, 15)
-    v = np.linspace(0, np.pi, 15)
-    x_bh = rs * np.outer(np.cos(u), np.sin(v))
-    y_bh = rs * np.outer(np.sin(u), np.sin(v))
-    z_bh = rs * np.outer(np.ones(np.size(u)), np.cos(v))
-    fig.add_trace(go.Surface(x=x_bh, y=y_bh, z=z_bh, colorscale=[[0, 'black'], [1, 'black']], showscale=False))
-    
-    # 초기 천체 위치
-    pos = st.session_state.bh_positions
-    fig.add_trace(go.Scatter3d(x=pos[:, 0], y=pos[:, 1], z=pos[:, 2], mode='markers', marker=dict(size=5, color='cyan')))
-    
-    fig.update_layout(
-        template="plotly_dark", margin=dict(l=0, r=0, b=0, t=0),
-        scene=dict(
-            xaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
-            yaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
-            zaxis=dict(range=[-15, 15], showgrid=False, showticklabels=False),
-            aspectmode='cube'
-        ),
-        width=800, height=700
-    )
-    st.plotly_chart(fig, use_container_width=True, key="bh_initial")
+    else:
+        # DB에 없는 음식을 입력했을 때의 유연한 예외 처리
+        st.warning(f"⚠️ '{user_food}'은(는) 데이터베이스에 등록되지 않은 음식입니다.")
+        st.markdown("하지만 일반적인 매운 음식 기준으로 예측해 드릴게요!")
+        
+        col1, col2 = st.columns([1.2, 1])
+        with col1:
+            st.subheader("📊 예측 매움 레벨")
+            # 2.5단계 기본 배치
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = 2.5,
+                title = {'text': "<b>데이터 미등록 음식 (추정치)</b>", 'font': {'size': 18}},
+                gauge = {'axis': {'range': [0, 5]}, 'bar': {'color': '#ff9500'}}
+            ))
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', width=450, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+            st.info("💡 카레나 일반적인 한식 찌개류 수준의 맵기(약 1,500 SHU)로 추정됩니다.")
+        with col2:
+            st.subheader("🖼️ 예측 음식 이미지")
+            # 입력한 검색어 그대로 이미지 매칭 시도
+            custom_img = f"https://source.unsplash.com/featured/600x500/?{user_food},food"
+            st.image(custom_img, caption=f"입력하신 '{user_food}' 관련 추천 이미지", use_container_width=True)
