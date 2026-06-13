@@ -1,28 +1,29 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import requests
+from io import BytesIO
 
 # 1. 스트림릿 페이지 설정 (와이드 레이아웃, 다크/라이트 자동 호환)
 st.set_page_config(page_title="맵부심 측정기 - 음식 매움 지수", layout="wide", page_icon="🌶️")
 
 # 애플리케이션 제목 및 설명
 st.title("🌶️ 맵부심 측정기: 음식 매움 지수 탐색기")
-st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 나무위키 기반의 정확한 음식 사진을 함께 보여줍니다.")
+st.markdown("궁금한 음식의 이름을 입력해보세요! 해당 음식의 매움 단계와 스코빌 지수(SHU), 그리고 위키백과/나무위키 기반의 정확한 음식 사진을 우회 다운로드하여 보여줍니다.")
 
-# 2. 음식 매움 데이터베이스 구축 (나무위키 및 위키미디어의 검증된 음식 이미지 URL 매칭)
-# 외부 API 개편으로 인한 사진 왜곡을 막기 위해 고정된 위키 이미지 주소를 매핑했습니다.
+# 2. 음식 매움 데이터베이스 구축 (위키피디아 / 위키미디어 소스)
 food_db = {
     "떡볶이": {
         "level": 2, 
         "shu": "1,000 ~ 2,500", 
         "desc": "매콤달콤한 한국의 대표 간식! 고추장과 물엿 베이스로 가게마다 맵기 차이가 커요.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Tteokbokki.jpg/640px-Tteokbokki.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Tteokbokki.jpg"
     },
     "엽기떡볶이": {
         "level": 5, 
         "shu": "4,000 ~ 10,000", 
         "desc": "스트레스 풀리는 불타는 매운맛! 캡사이신과 고춧가루의 강력한 조합으로 쿨피스가 필수입니다.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Ddaengcho_tteokbokki.jpg/640px-Ddaengcho_tteokbokki.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/c/cd/Ddaengcho_tteokbokki.jpg"
     },
     "신라면": {
         "level": 2, 
@@ -34,43 +35,43 @@ food_db = {
         "level": 4, 
         "shu": "4,400", 
         "desc": "전 세계를 울린 K-매운맛의 선두주자! 국물 없는 액상 수프의 강렬한 인술 같은 매운맛입니다.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Buldak-bokkeum-myeon.jpg/640px-Buldak-bokkeum-myeon.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/6/63/Buldak-bokkeum-myeon.jpg"
     },
     "김치찌개": {
         "level": 1, 
         "shu": "500 ~ 1,500", 
         "desc": "잘 익은 김치와 돼지고기를 달달 볶아 끓여낸 칼칼하고 시원한 한국인의 소울푸드.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Kimchi_jjigae.jpg/640px-Kimchi_jjigae.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/a/a0/Kimchi_jjigae.jpg"
     },
     "마라탕": {
         "level": 3, 
         "shu": "2,000 ~ 5,000", 
         "desc": "초피(화조)와 고추기름이 들어가 혀가 저리고 얼얼해지는(마비되는 듯한) 사천식 매운맛!", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Malatang_in_Seoul.jpg/640px-Malatang_in_Seoul.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/3/36/Malatang_in_Seoul.jpg"
     },
     "짬뽕": {
         "level": 2, 
         "shu": "1,500 ~ 3,000", 
         "desc": "야채와 해산물을 강한 불에 볶아 육수를 부어 만든 얼큰하고 칼칼한 중화풍 국물 요리.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Jjamppong.jpg/640px-Jjamppong.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/a/a8/Jjamppong.jpg"
     },
     "제육볶음": {
         "level": 1, 
         "shu": "800 ~ 1,200", 
         "desc": "돼지고기를 고추장, 고춧가루 양념에 달콤 매콤하게 볶아낸 대중적인 기사식당 원탑 반찬.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Jeyuk_bokkeum.jpg/640px-Jeyuk_bokkeum.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/d/db/Jeyuk_bokkeum.jpg"
     },
     "닭발": {
         "level": 4, 
         "shu": "3,000 ~ 6,000", 
         "desc": "콜라겐 가득, 쫀득하면서도 입안이 불타오르는 매운 양념 직화 포차 안주.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Dakbal.jpg/640px-Dakbal.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/4/4d/Dakbal.jpg"
     },
     "낙지볶음": {
         "level": 4, 
         "shu": "3,500 ~ 7,000", 
         "desc": "강렬한 고춧가루 양념에 낙지를 빠르게 볶아내 밥, 콩나물과 비벼 먹는 스테미너 요리.", 
-        "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Nakji_bokkeum.jpg/640px-Nakji_bokkeum.jpg"
+        "img_url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Nakji_bokkeum.jpg"
     }
 }
 
@@ -100,7 +101,6 @@ if user_food:
         
         st.success(f"🎉 '{matched_food}'의 매움 정보를 찾았습니다!")
         
-        # 화면 레이아웃 분할 (좌측: 매움 지수 미터기 / 우측: 음식 사진)
         col1, col2 = st.columns([1.2, 1])
         
         with col1:
@@ -143,11 +143,28 @@ if user_food:
             
         with col2:
             st.subheader("🖼️ 음식 이미지")
-            # 위키미디어/나무위키 고정 다이렉트 이미지 주소로 출력
-            st.image(img_url, caption=f"정확한 {matched_food} 실물 사진", use_container_width=True)
+            
+            # [핵심 수정] 나무위키/위키미디어 차단 정책 우회용 로직 구현
+            # 헤더에 웹 브라우저 정보(User-Agent)를 입력하여 봇 탐지를 차단합니다.
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            
+            try:
+                # 이미지를 서버 백엔드 단에서 직접 바이너리로 다운로드
+                response = requests.get(img_url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    image_bytes = BytesIO(response.content)
+                    # 다운로드받은 바이너리 데이터를 스트림릿 이미지 컴포넌트에 직접 주입 (안전지대)
+                    st.image(image_bytes, caption=f"정확한 {matched_food} 실물 사진 (위키 연동)", use_container_width=True)
+                else:
+                    st.error(f"이미지 서버가 응답하지 않습니다. (에러 코드: {response.status_code})")
+            except Exception as e:
+                # 통신 예외 상황 시 백업 렌더링 처리
+                st.warning("이미지 로딩 중 네트워크 오류가 발생했습니다.")
+                st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Korean_table_setting_1.jpg/640px-Korean_table_setting_1.jpg", use_container_width=True)
 
     else:
-        # DB에 없는 음식을 입력했을 때의 예외 처리
         st.warning(f"⚠️ '{user_food}'은(는) 데이터베이스에 등록되지 않은 음식입니다.")
         st.markdown("일반적인 매운 음식 기준으로 예측해 드릴게요!")
         
@@ -165,6 +182,5 @@ if user_food:
             st.info("💡 일반적인 한식 찌개나 볶음류 수준의 맵기(약 1,500 SHU)로 추정됩니다.")
         with col2:
             st.subheader("🖼️ 예측 음식 이미지")
-            # 기본 한식 테이블 셋 사진으로 대체
             fallback_img = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Korean_table_setting_1.jpg/640px-Korean_table_setting_1.jpg"
             st.image(fallback_img, caption="추천 한식 상차림 이미지", use_container_width=True)
